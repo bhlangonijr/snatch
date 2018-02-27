@@ -1,6 +1,5 @@
 -module(claws_fcm_worker).
 -behaviour(gen_statem).
--behaviour(claws).
 
 -include_lib("fast_xml/include/fxml.hrl").
 -include("snatch.hrl").
@@ -55,7 +54,7 @@ start_link(FCMParams) ->
   gen_statem:start_link(?MODULE, [FCMParams], []).
 
 init([#{gcs_add := Gcs_add, gcs_port := Gcs_Port, server_id := ServerId, server_key := ServerKey}]) ->
-  io:format("~nStarting FCM claw :~p", [#{gcs_add => Gcs_add, gcs_port => Gcs_Port, server_id => ServerId, server_key => ServerKey}]),
+  error_logger:info_msg("~nStarting FCM claw :~p", [#{gcs_add => Gcs_add, gcs_port => Gcs_Port, server_id => ServerId, server_key => ServerKey}]),
   {ok, disconnected, #data{gcs_add = Gcs_add, gcs_port = Gcs_Port, server_id = ServerId, server_key = ServerKey}, [{next_event, cast, connect}]}.
 
 callback_mode() -> handle_event_function.
@@ -139,28 +138,28 @@ wait_for_result(info, {ssl, _SSLSock, _Message},  Data) ->
 
 
 binding(info, {ssl, _SSLSock, _Message}, Data) ->
-  io:format("~nbinding Reeceived :~p",[_Message]),
-  io:format("~nClaw is connected",[]),
+  error_logger:info_msg("~nbinding Reeceived :~p",[_Message]),
+  error_logger:info_msg("~nClaw is connected",[]),
   snatch:connected(claws_fcm),
   {next_state, binded, Data, []}.
 
 binded(cast, {send, To, Payload}, #data{socket = Socket}) ->
-  io:format("~nReceived payload :~p",[Payload]),
+  error_logger:info_msg("~nReceived payload :~p",[Payload]),
 
   JSONPayload = lists:foldl(
     fun({Key,Value},Acc) -> maps:put(Key, Value,Acc) end,#{<<"message_id">> => base64:encode(crypto:strong_rand_bytes(6)), <<"to">> => To},Payload),
 
   FinalPayload = {xmlcdata, jsone:encode(JSONPayload)},
 
-  io:format("~nSending payload :~p",[FinalPayload]),
+  error_logger:info_msg("~nSending payload :~p",[FinalPayload]),
   Gcm = {xmlel, <<"gcm">>, [{<<"xmlns">>, <<"google:mobile:data">>}], [FinalPayload]},
   Mes = {xmlel, <<"message">>, [{<<"id">>, base64:encode(crypto:strong_rand_bytes(6))}], [Gcm]},
-  io:format("~nSending push :~p",[Mes]),
+  error_logger:info_msg("~nSending push :~p",[Mes]),
   ssl:send(Socket, fxml:element_to_binary(Mes)),
   {keep_state_and_data, []};
 
 binded(cast, {received, #xmlel{} = Packet}, _Data) ->
-  io:format("~npuscomp received ~p",[Packet]),
+  error_logger:info_msg("~npuscomp received ~p",[Packet]),
   From = snatch_xml:get_attr(<<"from">>, Packet),
   To = snatch_xml:get_attr(<<"to">>, Packet),
   Via = #via{jid = From, exchange = To, claws = ?MODULE},
@@ -168,13 +167,13 @@ binded(cast, {received, #xmlel{} = Packet}, _Data) ->
   {keep_state_and_data, []};
 
 binded(info, {ssl, _SSLSock, <<" ">>}, _Data) ->
-  io:format("~nKEEP ALIVE", []),
+  error_logger:info_msg("~nKEEP ALIVE", []),
   {keep_state_and_data, []};
 
 
 binded(info, {ssl, _SSLSock, Message}, Data) ->
   DecPak = fxml_stream:parse_element(Message),
-  io:format("~npuscomp received SSL ~p on socket ~p",[DecPak, _SSLSock]),
+  error_logger:info_msg("~npuscomp received SSL ~p on socket ~p", [DecPak, _SSLSock]),
   case DecPak#xmlel.name of
     <<"message">> ->
       case process_fcm_message(DecPak, Data) of
@@ -190,22 +189,16 @@ binded(info, {ssl, _SSLSock, Message}, Data) ->
       {keep_state_and_data, []}
   end;
 
-
-binded(info, {ssl, _SSLSock, Message}, _Data) ->
-  io:format("~npuscomp received SSL ~p",[Message]),
-  snatch:received(Message),
-  {keep_state_and_data, []};
-
 binded(cast, _Unknown, _Data) ->
   {keep_state_and_data, []}.
 
 
 drainned(_, {ssl, _SSLSock, Message}, Data) ->
-  io:format("~nFCM claw received SSL ~p in state drainned",[Message]),
+  error_logger:info_msg("~nFCM claw received SSL ~p in state drainned", [Message]),
   {stop, normal, Data};
 
 drainned(_, Msg, _Data) ->
-  io:format("~nFCM claw received ~p in state drainned",[Msg]),
+  error_logger:info_msg("~nFCM claw received ~p in state drainned", [Msg]),
   {keep_state_and_data, []}.
 
 
@@ -255,40 +248,40 @@ process_fcm_message(Message, Data) ->
   Message_type = proplists:get_value(<<"type">>, Message#xmlel.attrs),
   case Message_type of
     <<"error">> ->
-      io:format("~nFCM claw received error from FCM server :~p",[Message]),
+      error_logger:info_msg("~nFCM claw received error from FCM server :~p", [Message]),
       ok;
     _ ->
-      io:format("~nFCM claw received message from google FCM :~p",[{Message, Data}]),
-      process_message_payload(lists:nth(1,Message#xmlel.children))
+      error_logger:info_msg("~nFCM claw received message from google FCM :~p", [{Message, Data}]),
+      process_message_payload(hd(Message#xmlel.children))
   end.
 
 
 process_message_payload(#xmlel{name = <<"data:gcm">>} = Data) ->
-  io:format("~nprocessing payloadd : ~p",[Data]),
+  error_logger:info_msg("~nprocessing payloadd : ~p", [Data]),
   Cdata = fxml:get_tag_cdata(Data),
   Payload = jsone:decode(Cdata),
   process_json_payload(Payload);
 
 
 process_message_payload(El) ->
-  io:format("Received unmanaged payload from Google FCM : ~p",[El]),
+  error_logger:info_msg("Received unmanaged payload from Google FCM : ~p", [El]),
   ok.
 
 
 process_json_payload(#{<<"message_type">> := <<"control">>, <<"control_type">> := <<"CONNECTION_DRAINING">>}) ->
-  io:format("~nFCm claw, connection drainned",[]),
+  error_logger:info_msg("~nFCm claw, connection drainned",[]),
   pooler:remove_pid(self()),
   {next_state, drainned};
 
 process_json_payload(#{<<"message_type">> := <<"ack">>}) ->
-  io:format("~nACk from FCM",[]),
+  error_logger:info_msg("~nACk from FCM",[]),
   ok;
 
 process_json_payload(#{<<"message_type">> := <<"nack">>}) ->
-  io:format("~nNACk from FCM",[]),
+  error_logger:info_msg("~nNACk from FCM",[]),
   ok;
 
 
 process_json_payload(Unk) ->
-  io:format("~nClaw FCM received unmanaged payload :~p",[Unk]),
+  error_logger:info_msg("~nClaw FCM received unmanaged payload :~p", [Unk]),
   ok.

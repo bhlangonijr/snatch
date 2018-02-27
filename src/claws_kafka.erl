@@ -77,7 +77,7 @@ handle_cast({received, #kafka_message{key = _Key, value = XML}, _Partition},
             #{trimmed := true} = Opts) ->
     case fxml_stream:parse_element(XML) of
         {error, _Error} ->
-            io:format("error => ~p~n", [_Error]);
+            error_logger:error_msg("error => ~p~n", [_Error]);
         Packet ->
             From = snatch_xml:get_attr(<<"from">>, Packet),
             To = snatch_xml:get_attr(<<"to">>, Packet),
@@ -91,7 +91,7 @@ handle_cast({received, #kafka_message{key = _Key, value = XML}, _Partition},
             Opts) ->
     case fxml_stream:parse_element(XML) of
         {error, _Error} ->
-            io:format("error => ~p~n", [_Error]);
+            error_logger:error_msg("error => ~p~n", [_Error]);
         Packet ->
             From = snatch_xml:get_attr(<<"from">>, Packet),
             To = snatch_xml:get_attr(<<"to">>, Packet),
